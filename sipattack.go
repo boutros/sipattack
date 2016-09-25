@@ -16,13 +16,11 @@ type client struct {
 	conn net.Conn
 
 	busyFactor float64 // how often it sends a request to SIP server
-	failFactor float64 // how often it sends invalid SIP requests, or disconnectes
 }
 
-func newClient(b, f float64) *client {
+func newClient(b float64) *client {
 	return &client{
 		busyFactor: b,
-		failFactor: f,
 	}
 }
 
@@ -35,6 +33,7 @@ func (c *client) Run() {
 
 	r := bufio.NewReader(conn)
 	for {
+		time.Sleep(time.Duration(rand.Float64()*10/c.busyFactor) * time.Second)
 		if err := randomRequest().Encode(conn); err != nil {
 			log.Println("error writing SIP request: " + err.Error())
 			return
@@ -49,8 +48,6 @@ func (c *client) Run() {
 		if err != nil {
 			log.Println("error decoding SIP response: " + err.Error())
 		}
-
-		time.Sleep(time.Duration(rand.Float64()*100/c.busyFactor) * time.Second)
 	}
 }
 
@@ -100,19 +97,16 @@ func main() {
 		sipServer   = flag.String("s", "localhost:3333", "SIP server address")
 		numClients  = flag.Int("n", 100, "number of SIP clients to create")
 		busyFactor  = flag.Float64("b", 1, "busyness factor (0-1)")
-		failFactor  = flag.Float64("f", 0.01, "failure factor (0-1)")
 		barcodeFile = flag.String("barcodes", "barcodes.txt", "file with valid barcodes (one per line)")
 		patronFile  = flag.String("patrons", "patrons.txt", "file with valid patrons IDs (one per line)")
 		branchFile  = flag.String("branches", "branches.txt", "file with locations (one per line)")
 	)
+	rand.Seed(time.Now().UnixNano())
 
 	flag.Parse()
 	sipHost = *sipServer
 
 	if *busyFactor < 0 || *busyFactor > 1 {
-		flag.Usage()
-	}
-	if *failFactor < 0 || *failFactor > 1 {
 		flag.Usage()
 	}
 
@@ -121,7 +115,7 @@ func main() {
 	readSamples(*branchFile, &branches)
 
 	for i := 0; i < *numClients; i++ {
-		c := newClient(*busyFactor, *failFactor)
+		c := newClient(*busyFactor)
 		go c.Run()
 	}
 	time.Sleep(time.Hour)
