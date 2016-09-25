@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"log"
-	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -51,22 +50,19 @@ func (c *client) Run() {
 			log.Println("error decoding SIP response: " + err.Error())
 		}
 
-		time.Sleep(time.Duration(math.Abs(rand.NormFloat64()*100+(10*c.busyFactor))) * time.Second)
+		time.Sleep(time.Duration(rand.Float64()*100/c.busyFactor) * time.Second)
 	}
 }
 
 var (
 	barcodes = make([]string, 0)
 	patrons  = make([]string, 0)
+	branches = make([]string, 0)
 )
 
-func randomBarcode() string {
-	return barcodes[rand.Intn(len(barcodes)-1)]
-}
-
-func randomPatron() string {
-	return patrons[rand.Intn(len(patrons)-1)]
-}
+func randomBarcode() string { return barcodes[rand.Intn(len(barcodes)-1)] }
+func randomPatron() string  { return patrons[rand.Intn(len(patrons)-1)] }
+func randomBranch() string  { return branches[rand.Intn(len(branches)-1)] }
 
 var mf = sip2.NewMessageFactory(
 	sip2.Field{Type: sip2.FieldRenewalPolicy, Value: "Y"},
@@ -77,7 +73,6 @@ var mf = sip2.NewMessageFactory(
 	sip2.Field{Type: sip2.FieldFeeType, Value: "01"},
 	sip2.Field{Type: sip2.FieldMagneticMedia, Value: "N"},
 	sip2.Field{Type: sip2.FieldDesentisize, Value: "N"},
-	sip2.Field{Type: sip2.FieldCurrentLocation, Value: "here"},
 )
 
 func randomRequest() sip2.Message {
@@ -85,11 +80,13 @@ func randomRequest() sip2.Message {
 	switch {
 	case n < 40:
 		return mf.NewMessage(sip2.MsgReqCheckin).AddField(
-			sip2.Field{Type: sip2.FieldItemIdentifier, Value: randomBarcode()})
+			sip2.Field{Type: sip2.FieldItemIdentifier, Value: randomBarcode()},
+			sip2.Field{Type: sip2.FieldCurrentLocation, Value: randomBranch()})
 	case n < 80:
 		return mf.NewMessage(sip2.MsgReqCheckout).AddField(
 			sip2.Field{Type: sip2.FieldItemIdentifier, Value: randomBarcode()},
-			sip2.Field{Type: sip2.FieldPatronIdentifier, Value: randomPatron()})
+			sip2.Field{Type: sip2.FieldPatronIdentifier, Value: randomPatron()},
+			sip2.Field{Type: sip2.FieldCurrentLocation, Value: randomBranch()})
 	default:
 		return mf.NewMessage(sip2.MsgReqItemInformation).AddField(
 			sip2.Field{Type: sip2.FieldItemIdentifier, Value: randomBarcode()})
@@ -106,6 +103,7 @@ func main() {
 		failFactor  = flag.Float64("f", 0.01, "failure factor (0-1)")
 		barcodeFile = flag.String("barcodes", "barcodes.txt", "file with valid barcodes (one per line)")
 		patronFile  = flag.String("patrons", "patrons.txt", "file with valid patrons IDs (one per line)")
+		branchFile  = flag.String("branches", "branches.txt", "file with locations (one per line)")
 	)
 
 	flag.Parse()
@@ -118,42 +116,29 @@ func main() {
 		flag.Usage()
 	}
 
-	if *barcodeFile != "" {
-		f, err := os.Open(*barcodeFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			barcodes = append(barcodes, scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
-
-		f.Close()
-	}
-	if *patronFile != "" {
-		f, err := os.Open(*patronFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			patrons = append(patrons, scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
-
-		f.Close()
-	}
+	readSamples(*barcodeFile, &barcodes)
+	readSamples(*patronFile, &patrons)
+	readSamples(*branchFile, &branches)
 
 	for i := 0; i < *numClients; i++ {
 		c := newClient(*busyFactor, *failFactor)
 		go c.Run()
 	}
 	time.Sleep(time.Hour)
+}
+
+func readSamples(file string, dest *[]string) {
+	f, err := os.Open(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		*dest = append(*dest, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
 }
