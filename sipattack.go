@@ -113,8 +113,7 @@ func main() {
 	readSamples(*branchFile, &branches)
 
 	for i := 0; i < *numClients; i++ {
-		c := newClient(*busyFactor)
-		go c.Run()
+		go newClient(*busyFactor).Run()
 	}
 	time.Sleep(time.Hour)
 }
