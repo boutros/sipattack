@@ -13,8 +13,6 @@ import (
 )
 
 type client struct {
-	conn net.Conn
-
 	busyFactor float64 // how often it sends a request to SIP server
 }
 
