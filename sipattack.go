@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -33,17 +34,17 @@ func (c *client) Run() {
 	for {
 		time.Sleep(time.Duration(rand.Float64()*10000/c.busyFactor) * time.Millisecond)
 		if err := randomRequest().Encode(conn); err != nil {
-			//if err != io.EOF {
-			log.Println("error writing SIP request: " + err.Error())
-			//}
+			if err != io.EOF {
+				log.Println("error writing SIP request: " + err.Error())
+			}
 			return
 		}
 
 		b, err := r.ReadBytes('\r')
 		if err != nil {
-			//if err != io.EOF {
-			log.Println("error reading SIP response: " + err.Error())
-			//}
+			if err != io.EOF {
+				log.Println("error reading SIP response: " + err.Error())
+			}
 			return
 		}
 		_, err = sip2.Decode(b)
