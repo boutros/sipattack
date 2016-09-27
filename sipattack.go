@@ -28,18 +28,22 @@ func (c *client) Run() {
 		log.Println("error connecting to SIP server: " + err.Error())
 		return
 	}
-
+	defer conn.Close()
 	r := bufio.NewReader(conn)
 	for {
-		time.Sleep(time.Duration(rand.Float64()*10/c.busyFactor) * time.Second)
+		time.Sleep(time.Duration(rand.Float64()*10000/c.busyFactor) * time.Millisecond)
 		if err := randomRequest().Encode(conn); err != nil {
+			//if err != io.EOF {
 			log.Println("error writing SIP request: " + err.Error())
+			//}
 			return
 		}
 
 		b, err := r.ReadBytes('\r')
 		if err != nil {
+			//if err != io.EOF {
 			log.Println("error reading SIP response: " + err.Error())
+			//}
 			return
 		}
 		_, err = sip2.Decode(b)
@@ -94,7 +98,7 @@ func main() {
 	var (
 		sipServer   = flag.String("s", "localhost:3333", "SIP server address")
 		numClients  = flag.Int("n", 100, "number of SIP clients to create")
-		busyFactor  = flag.Float64("b", 1, "busyness factor (0-1)")
+		busyFactor  = flag.Float64("b", 0.1, "busyness factor (0-1)")
 		barcodeFile = flag.String("barcodes", "barcodes.txt", "file with valid barcodes (one per line)")
 		patronFile  = flag.String("patrons", "patrons.txt", "file with valid patrons IDs (one per line)")
 		branchFile  = flag.String("branches", "branches.txt", "file with locations (one per line)")
