@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"flag"
 	"io"
 	"log"
@@ -31,6 +32,35 @@ func (c *client) Run() {
 	}
 	defer conn.Close()
 	r := bufio.NewReader(conn)
+
+	user, pass := randomUserPass()
+	msg := mf.NewMessage(sip2.MsgReqLogin).AddField(
+		sip2.Field{Type: sip2.FieldLoginUserID, Value: user},
+		sip2.Field{Type: sip2.FieldLoginPassword, Value: pass})
+	if err := msg.Encode(conn); err != nil {
+		if err != io.EOF {
+			log.Println("error writing SIP request: " + err.Error())
+		}
+		return
+	}
+
+	b, err := r.ReadBytes('\r')
+	if err != nil {
+		if err != io.EOF {
+			log.Println("error reading SIP response: " + err.Error())
+		}
+		return
+	}
+	loginResponse, err := sip2.Decode(b)
+	if err != nil {
+		log.Println("error decoding SIP response: " + err.Error())
+	}
+
+	if loginResponse.Field(sip2.FieldOK) != "1" {
+		log.Println("SIP login failed")
+		return
+	}
+
 	for {
 		time.Sleep(time.Duration(rand.Float64()*10000/c.busyFactor) * time.Millisecond)
 		if err := randomRequest().Encode(conn); err != nil {
@@ -54,25 +84,34 @@ func (c *client) Run() {
 	}
 }
 
-var (
-	barcodes = make([]string, 0)
-	patrons  = make([]string, 0)
-	branches = make([]string, 0)
-)
-
 func randomBarcode() string { return barcodes[rand.Intn(len(barcodes)-1)] }
 func randomPatron() string  { return patrons[rand.Intn(len(patrons)-1)] }
 func randomBranch() string  { return branches[rand.Intn(len(branches)-1)] }
+func randomUserPass() (string, string) {
+	n := rand.Intn(len(users) - 1)
+	return users[n][0], users[n][1]
+}
 
-var mf = sip2.NewMessageFactory(
-	sip2.Field{Type: sip2.FieldRenewalPolicy, Value: "Y"},
-	sip2.Field{Type: sip2.FieldNoBlock, Value: "N"},
-	sip2.Field{Type: sip2.FieldInstitutionID, Value: ""},
-	sip2.Field{Type: sip2.FieldTerminalPassword, Value: ""},
-	sip2.Field{Type: sip2.FieldSecurityMarker, Value: "01"},
-	sip2.Field{Type: sip2.FieldFeeType, Value: "01"},
-	sip2.Field{Type: sip2.FieldMagneticMedia, Value: "N"},
-	sip2.Field{Type: sip2.FieldDesentisize, Value: "N"},
+var (
+	sipHost string
+
+	barcodes = make([]string, 0)
+	patrons  = make([]string, 0)
+	branches = make([]string, 0)
+	users    = [][]string{}
+
+	mf = sip2.NewMessageFactory(
+		sip2.Field{Type: sip2.FieldRenewalPolicy, Value: "Y"},
+		sip2.Field{Type: sip2.FieldNoBlock, Value: "N"},
+		sip2.Field{Type: sip2.FieldInstitutionID, Value: ""},
+		sip2.Field{Type: sip2.FieldTerminalPassword, Value: ""},
+		sip2.Field{Type: sip2.FieldSecurityMarker, Value: "01"},
+		sip2.Field{Type: sip2.FieldFeeType, Value: "01"},
+		sip2.Field{Type: sip2.FieldMagneticMedia, Value: "N"},
+		sip2.Field{Type: sip2.FieldDesentisize, Value: "N"},
+		sip2.Field{Type: sip2.FieldUIDAlgorithm, Value: "0"},
+		sip2.Field{Type: sip2.FieldPWDAlgorithm, Value: "0"},
+	)
 )
 
 func randomRequest() sip2.Message {
@@ -93,16 +132,15 @@ func randomRequest() sip2.Message {
 	}
 }
 
-var sipHost string
-
 func main() {
 	var (
 		sipServer   = flag.String("s", "localhost:3333", "SIP server address")
 		numClients  = flag.Int("n", 100, "number of SIP clients to create")
-		busyFactor  = flag.Float64("b", 0.1, "busyness factor (0-1)")
+		busyFactor  = flag.Float64("b", 0.9, "busyness factor (0-1)")
 		barcodeFile = flag.String("barcodes", "barcodes.txt", "file with valid barcodes (one per line)")
 		patronFile  = flag.String("patrons", "patrons.txt", "file with valid patrons IDs (one per line)")
 		branchFile  = flag.String("branches", "branches.txt", "file with locations (one per line)")
+		usersFile   = flag.String("sipusers", "sipusers.csv", "csv file with username,password")
 	)
 	rand.Seed(time.Now().UnixNano())
 
@@ -116,6 +154,16 @@ func main() {
 	readSamples(*barcodeFile, &barcodes)
 	readSamples(*patronFile, &patrons)
 	readSamples(*branchFile, &branches)
+
+	f, err := os.Open(*usersFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r := csv.NewReader(f)
+	users, err = r.ReadAll()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	for i := 0; i < *numClients; i++ {
 		go newClient(*busyFactor).Run()
